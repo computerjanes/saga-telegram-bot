@@ -51,10 +51,13 @@ def get_links_to_offers() -> dict:
     }
 
 
+def get_post_adress():
+    post_address = "https://www.saga.hamburg/immobiliensuche?Kategorie=APARTMENT"
+    return post_address
+
 
 def get_html_from_saga():
-    post_address = "https://www.saga.hamburg/immobiliensuche?Kategorie=APARTMENT"
-    
+    post_address = get_post_adress()
 
     try:
         r = requests.get(post_address, headers={'Content-Type': 'application/json'})
@@ -70,43 +73,37 @@ def get_html_from_saga():
         return ""
 
 
-def get_offer_title(link_to_offer):
-    try:
-        get_url = requests.get(link_to_offer)
-        get_text = get_url.text
-        soup = BeautifulSoup(get_text, "html.parser")
-
-        title = soup.find_all('h1', class_='h3 ft-bold', limit=1)[0]
-
-        return title.text
-
-    except:
-        return 'notitle '
-
-
 # posts all information about an offer to telegram
 def post_offer_to_telegram(offer_details, chat_id):
-    send_msg_to_telegram("*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*", chat_id)
+
+    def shorten_string(input_string, max_length=25):
+        if len(input_string) <= max_length:
+            return input_string
+        else:
+            return input_string[:max_length - 2] + '..'
 
     def details_to_str(offer_details):
+        title_shortened = shorten_string(offer_details.get("title"))
+        details_str = f'[{title_shortened}]({offer_details.get("link")})\n' \
+                      f"{offer_details.get('rent'):.0f} € | {offer_details.get('space', '?'):.0f} m² | " \
+                      f"{offer_details.get('rooms', '?')} Rooms | {offer_details.get('date', '?')}"
+
         if zipcode := offer_details.get("zipcode", None):
             neighborhoods = get_neighborhoods_for_zipcode(zipcode)
-            
-            return  f"Rent: {offer_details.get('rent')}€, Rooms: {offer_details.get('rooms', '?')}, Location: {offer_details.get('zipcode')} {', '.join(neighborhoods)}"
-        
-        return  f"Rent: {offer_details.get('rent')}€, Rooms: {offer_details.get('rooms', '?')}"
+            details_str += f" | {offer_details.get('zipcode')} {', '.join(neighborhoods)}"
 
+        return details_str
 
-    for msg in [details_to_str(offer_details), offer_details.get("link")]:
-        send_msg_to_telegram(msg, chat_id)
-
+    msg = details_to_str(offer_details)
+    send_msg_to_telegram(msg, chat_id)
 
 
 # sends a message to a telegram chat
 def send_msg_to_telegram(msg, chat_id):
     token = get_value_from_config(["telegram_token"])
 
-    msg = 'https://api.telegram.org/bot' + token + '/sendMessage?chat_id=' + chat_id + '&parse_mode=Markdown&text=' + msg
+    msg = 'https://api.telegram.org/bot' + token + '/sendMessage?chat_id=' + chat_id + \
+          '&disable_web_page_preview=true' + '&parse_mode=Markdown&text=' +msg
 
     try:
         response = requests.get(msg)
@@ -119,7 +116,6 @@ def send_msg_to_telegram(msg, chat_id):
     except requests.exceptions.RequestException as e:
         print("could not forward to telegram" + str(e))
         print("this was the message I tried to send: " + msg)
-
 
 
 def is_offer_known(offer: str):
@@ -137,13 +133,17 @@ def add_offers_to_known_offers(offers: dict):
                 file.close()
 
 
+def trim_whitespace(s):
+    # Replace multiple whitespace with a single space
+    return re.sub(r'\s+', ' ', s).strip()
+
+
 def get_zipcode(offer_soup) -> int|None:
     zipcode = None
-
     text_xl_divs = offer_soup.find_all('div', class_='text-xl')  # address is in "text-xl" class
     if text_xl_divs:
         for div in text_xl_divs:
-            print(div.string)
+            print(trim_whitespace(div.string))
 
             if zipcode_like_strings:=re.findall('\d{5}', str(div.string)):
                 zipcode = int(zipcode_like_strings[0])  # find zipcode by regex for 5digits
@@ -155,10 +155,31 @@ def get_zipcode(offer_soup) -> int|None:
     return zipcode
 
 
+def get_date(offer_soup) -> str:
+    try:
+        # Example date_string 01.06.2024
+        date_string = offer_soup.find("td", string="Verfügbar ab").findNext("td").string
+        date_string = trim_whitespace(date_string)
+        # todo: convert to datetime
+        return date_string
+    except:
+        return None
+
+
+def get_space(offer_soup) -> float:
+    try:
+        # Example rent_string 1.002,68 €
+        space_string = offer_soup.find("td", string="Wohnfläche ca.").findNext("td").string
+        space_string = space_string.replace('m²', '').replace(' ', '')
+        space_string = space_string.split(',')[0]  # ignore cm²
+        space = space_string.replace('.', '')  # replace 1.000 to be 1000
+        return float(space)
+    except:
+        return None
 
 def get_rent(offer_soup) -> float:
     # Example rent_string 1.002,68 €
-    rent_string = offer_soup.find("td", text="Gesamtmiete").findNext("td").string
+    rent_string = offer_soup.find("td", string="Gesamtmiete").findNext("td").string
     rent_string = rent_string.replace('€', '').replace(' ', '')
     rent_string = rent_string.split(',')[0]  # ignore cents
     rent = rent_string.replace('.', '')  # replace 1.000 to be 1000
@@ -184,12 +205,27 @@ def get_rooms(offer_soup) -> int|None:
     return rooms
 
 
-def get_offer_details(link:str) -> dict:
+def get_offer_title(soup, link_to_offer):
+    try:
+        # get title from html
+        title = soup.find_all('h1', class_='py-5', limit=1)[0]
+        return title.text
+    except:
+        # get title from link
+        title = link_to_offer.split('/')[-1]
+        title = title.replace('-', ' ')
+        #offer_id = link_to_offer.split('/')[-2]
+        return title
+
+
+def get_offer_details(link:str, links_to_all_offers:str) -> dict:
     details = {
         "rent": None,
         "zipcode": None,
         "rooms": None,
-        "link": link
+        "link": link,
+        "title": None,
+        "date": None
     }
 
     # get details HTML
@@ -201,6 +237,9 @@ def get_offer_details(link:str) -> dict:
     # get rent price
     details["rent"] = get_rent(offer_soup)
 
+    # get space in square meters
+    details["space"] = get_space(offer_soup)
+
     # get rooms
     details["rooms"] = get_rooms(offer_soup)
     
@@ -209,11 +248,12 @@ def get_offer_details(link:str) -> dict:
     if not details["zipcode"]:
         print(f"COULD NOT GET ADDRESS FOR LINK {link}")
 
+    # get title
+    details["title"] = get_offer_title(offer_soup, link)
+    # get date
+    details["date"] = get_date(offer_soup)
 
     return details
-
-        
-
 
 
 # checks if the offer meets the criteria for this chat
@@ -230,7 +270,7 @@ def offers_that_match_criteria(links_to_all_offers, chat_id) -> List[str]:
             continue    
         print("new offer", offer_link)
 
-        offer_details = get_offer_details(offer_link)
+        offer_details = get_offer_details(offer_link, links_to_all_offers)
 
         # check rent price
         rent_until = criteria["rent_until"]       
@@ -265,10 +305,10 @@ if __name__ == "__main__":
 
     for chat_id in chat_ids:
         if get_value_from_config(["chats", chat_id, "debug_group"]):
-            send_msg_to_telegram("Bot started at " + str(datetime.now()), chat_id)
+            send_msg_to_telegram("Bot started at " + datetime.now().strftime('%Y-%m-%d %H:%M:%S'), chat_id)
 
     while True:
-        print("checking for updates ", datetime.now())
+        print("checking for updates ", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         current_offers = get_links_to_offers()
 
         # for each chat: send offer to telegram, if it meets the chat's criteria        
