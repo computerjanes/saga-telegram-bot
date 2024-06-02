@@ -21,8 +21,8 @@ def get_value_from_config(path):
     for prop in path:
         if len(prop) == 0:
             continue
-        if prop.isdigit():
-            prop = int(prop)
+        #if prop.isdigit(): #why? doesnt work..
+        #    prop = int(prop)
         data = data[prop]
 
     return data
@@ -31,7 +31,7 @@ def get_value_from_config(path):
 def get_links_to_offers() -> dict:
     html = get_html_from_saga()
     if html == "":
-        return []
+        return {}
 
     all_links = []
 
@@ -76,7 +76,7 @@ def get_html_from_saga():
 # posts all information about an offer to telegram
 def post_offer_to_telegram(offer_details, chat_id):
 
-    def shorten_string(input_string, max_length=25):
+    def shorten_string(input_string, max_length=28):
         if len(input_string) <= max_length:
             return input_string
         else:
@@ -84,7 +84,7 @@ def post_offer_to_telegram(offer_details, chat_id):
 
     def details_to_str(offer_details):
         title_shortened = shorten_string(offer_details.get("title"))
-        details_str = f'[{title_shortened}]({offer_details.get("link")})\n' \
+        details_str = f'SAGA: [{title_shortened}]({offer_details.get("link")})\n' \
                       f"{offer_details.get('rent'):.0f} € | {offer_details.get('space', '?'):.0f} m² | " \
                       f"{offer_details.get('rooms', '?')} Rooms | {offer_details.get('date', '?')}"
 
@@ -218,7 +218,7 @@ def get_offer_title(soup, link_to_offer):
         return title
 
 
-def get_offer_details(link:str, links_to_all_offers:str) -> dict:
+def get_offer_details(link:str) -> dict:
     details = {
         "rent": None,
         "zipcode": None,
@@ -257,7 +257,7 @@ def get_offer_details(link:str, links_to_all_offers:str) -> dict:
 
 
 # checks if the offer meets the criteria for this chat
-def offers_that_match_criteria(links_to_all_offers, chat_id) -> List[str]:
+def offers_that_match_criteria(links_to_all_offers, chat_id, check_if_known=False) -> List[str]:
     matching_offers = []
 
     criteria = get_value_from_config(["chats", chat_id, "criteria"])
@@ -265,12 +265,15 @@ def offers_that_match_criteria(links_to_all_offers, chat_id) -> List[str]:
     # get only offers of matching category (e.g. "apartments")
     offers = links_to_all_offers.get(criteria.get("category", "apartments"))
 
+    if not offers:
+        return matching_offers
+
     for offer_link in offers:
-        if is_offer_known(offer_link):
+        if check_if_known and is_offer_known(offer_link):
             continue    
         print("new offer", offer_link)
 
-        offer_details = get_offer_details(offer_link, links_to_all_offers)
+        offer_details = get_offer_details(offer_link)
 
         # check rent price
         rent_until = criteria["rent_until"]       
@@ -299,8 +302,7 @@ def offers_that_match_criteria(links_to_all_offers, chat_id) -> List[str]:
     return matching_offers
 
 
-if __name__ == "__main__":
-
+def main():
     chat_ids = get_value_from_config(["chats"]).keys()
 
     for chat_id in chat_ids:
@@ -311,7 +313,7 @@ if __name__ == "__main__":
         print("checking for updates ", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         current_offers = get_links_to_offers()
 
-        # for each chat: send offer to telegram, if it meets the chat's criteria        
+        # for each chat: send offer to telegram, if it meets the chat's criteria
         for chat_id in chat_ids:
             matching_offers = offers_that_match_criteria(current_offers, chat_id)
 
@@ -323,3 +325,7 @@ if __name__ == "__main__":
 
         # check every 3 minutes
         time.sleep(180)
+
+
+if __name__ == "__main__":
+    main()
