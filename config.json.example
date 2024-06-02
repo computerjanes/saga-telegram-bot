@@ -6,6 +6,7 @@
         "criteria": {
           "category": "apartments",
           "min_rooms": 1,
+          "min_space": 10,
           "rent_from": 200,
           "rent_until": 800,
           "zipcode_whitelist": [
@@ -66,6 +67,7 @@
       "debug_group": false,
         "criteria": {
           "min_rooms": 4,
+          "min_space": 40,
           "rent_from": 200,
           "rent_until": 1500,
           "zipcode_whitelist": false
@@ -75,6 +77,7 @@
         "debug_group": true,
         "criteria": {
           "min_rooms": 0,
+          "min_space": 1,
           "rent_from": 200,
           "rent_until": 5000,
           "zipcode_whitelist": false

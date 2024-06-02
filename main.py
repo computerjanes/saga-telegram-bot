@@ -51,13 +51,13 @@ def get_links_to_offers() -> dict:
     }
 
 
-def get_post_adress():
+def get_post_address():
     post_address = "https://www.saga.hamburg/immobiliensuche?Kategorie=APARTMENT"
     return post_address
 
 
 def get_html_from_saga():
-    post_address = get_post_adress()
+    post_address = get_post_address()
 
     try:
         r = requests.get(post_address, headers={'Content-Type': 'application/json'})
@@ -91,6 +91,9 @@ def post_offer_to_telegram(offer_details, chat_id):
         if zipcode := offer_details.get("zipcode", None):
             neighborhoods = get_neighborhoods_for_zipcode(zipcode)
             details_str += f" | {offer_details.get('zipcode')} {', '.join(neighborhoods)}"
+
+        #descr_shortened = shorten_string(offer_details.get("description"), 120)
+        #details_str += f'\n_{descr_shortened}_'
 
         return details_str
 
@@ -145,7 +148,7 @@ def get_zipcode(offer_soup) -> int|None:
         for div in text_xl_divs:
             print(trim_whitespace(div.string))
 
-            if zipcode_like_strings:=re.findall('\d{5}', str(div.string)):
+            if zipcode_like_strings:=re.findall(r'\d{5}', str(div.string)):
                 zipcode = int(zipcode_like_strings[0])  # find zipcode by regex for 5digits
                 break
 
@@ -205,6 +208,36 @@ def get_rooms(offer_soup) -> int|None:
     return rooms
 
 
+def get_rooms(offer_soup) -> int|None:
+    try:
+        rooms_string = offer_soup.find("td",string="Zimmer").findNext("td").string
+    except AttributeError:
+        # no info on rooms (happens for offices)
+        return None
+
+
+    try:
+        rooms = int(rooms_string)
+    except ValueError:
+        # invalid literal for int() with base 10: '2 1/2'  there is "half rooms"
+        rooms_string = rooms_string.split(" ")[0]
+        rooms = int(rooms_string)
+
+    return rooms
+
+def get_description(offer_soup) -> int|None:
+    try:
+        descr_string = offer_soup.find(class_="flex flex-col gap-6 wysiwyg").text
+        test = 1
+    except AttributeError:
+        # no info on rooms (happens for offices)
+        return None
+
+    descr_string = descr_string.replace('Lagebeschreibung', '')
+
+    descr_string = trim_whitespace(descr_string)
+    return descr_string
+
 def get_offer_title(soup, link_to_offer):
     try:
         # get title from html
@@ -223,9 +256,11 @@ def get_offer_details(link:str) -> dict:
         "rent": None,
         "zipcode": None,
         "rooms": None,
+        "space": None,
         "link": link,
         "title": None,
-        "date": None
+        "date": None,
+        "description": None,
     }
 
     # get details HTML
@@ -252,12 +287,13 @@ def get_offer_details(link:str) -> dict:
     details["title"] = get_offer_title(offer_soup, link)
     # get date
     details["date"] = get_date(offer_soup)
-
+    # get descr
+    details["description"] = get_description(offer_soup)
     return details
 
 
 # checks if the offer meets the criteria for this chat
-def offers_that_match_criteria(links_to_all_offers, chat_id, check_if_known=False) -> List[str]:
+def offers_that_match_criteria(links_to_all_offers, chat_id, check_if_known=True) -> List[str]:
     matching_offers = []
 
     criteria = get_value_from_config(["chats", chat_id, "criteria"])
@@ -278,13 +314,19 @@ def offers_that_match_criteria(links_to_all_offers, chat_id, check_if_known=Fals
         # check rent price
         rent_until = criteria["rent_until"]       
         if offer_details.get("rent", 0) > rent_until:
-            print(f"rent too high {offer_details.get('rent')}, {rent_until}")
+            print(f"rent too high: {offer_details.get('rent')}, max={rent_until}")
             continue
 
         # check min rooms
         min_rooms = criteria.get("min_rooms", None)
         if min_rooms and min_rooms > offer_details.get("rooms", 0):
-            print("not enough rooms")
+            print(f"not enough rooms: {offer_details.get('rooms', 0)}, min={min_rooms}")
+            continue
+
+        # check min space
+        min_space = criteria.get("min_space", None)
+        if min_space and min_space > offer_details.get("space", 0):
+            print(f"not enough space: {offer_details.get('space', 0)}, min={min_space}")
             continue
 
         # check if zipcode is in zipcode whitelist
