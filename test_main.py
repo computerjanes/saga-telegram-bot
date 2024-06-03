@@ -13,4 +13,4 @@ def test_offers_that_match_criteria():
 
 
 def test_main():
-    main.main()
+    main.main('config_test.json')
