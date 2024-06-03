@@ -364,7 +364,7 @@ def wait(seconds):
                 yield cursor
     dot = dots()
     frames_per_second = 2
-    spins = int( frames_per_second)
+    spins = int(frames_per_second*seconds)
     for _ in range(spins):
         sys.stdout.write(next(dot))  # Write the next spinner character
         sys.stdout.flush()  # Flush the output to the console
