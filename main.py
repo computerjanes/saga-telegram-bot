@@ -97,9 +97,9 @@ def post_offer_to_telegram(offer_details, chat_id, token):
 
         if rating := offer_details.get("rating", None):
             rating_str = '⭐️' * rating
-            details_str = rating_str + '️ SAGA: ' + details_str
+            details_str = rating_str + ' SAGA: ' + details_str
         else:
-            details_str = 'SAGA: ' + details_str
+            details_str = '⭐ SAGA: ' + details_str
         #descr_shortened = shorten_string(offer_details.get("description"), 120)
         #details_str += f'\n_{descr_shortened}_'
 
@@ -376,9 +376,10 @@ def main(path_config):
     chat_ids = get_value_from_config(path_config, ["chats"]).keys()
     token = get_value_from_config(path_config, ["telegram_token"])
 
+    print('chats:', get_value_from_config(path_config, ["chats"]))
     for chat_id in chat_ids:
         if get_value_from_config(path_config, ["chats", chat_id, "debug_group"]):
-            send_msg_to_telegram("Bot started at " + datetime.now().strftime('%Y-%m-%d %H:%M:%S'), chat_id, token)
+            send_msg_to_telegram("SAGA Bot started at " + datetime.now().strftime('%Y-%m-%d %H:%M:%S'), chat_id, token)
 
     while True:
         print("checking for updates ", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
